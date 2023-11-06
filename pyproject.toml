@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "cloudwatch-logger"
+version = "0.1.0"
+description = "Run docker container by image and send logs to cloudwatch"
+authors = ["Mernus"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+boto3 = "^1.28.78"
+docker = "^6.1.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

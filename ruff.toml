@@ -1,0 +1,26 @@
+dummy-variable-rgx = "^_$"
+
+extend-exclude = [
+    ".git", ".pytest_cache",
+    ".idea", ".vscode",
+]
+
+ignore = ["A003", "ANN101", "ANN102", "ANN401", "E231"]
+
+line-length = 110
+
+select = ["E", "F", "B", "Q", "ANN", "S"]
+
+[per-file-ignores]
+"__init__.py" = ["F401"]
+
+[flake8-comprehensions]
+allow-dict-calls-with-keyword-arguments = true
+
+[flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+parametrize-names-type = "list"
+
+[flake8-type-checking]
+exempt-modules = ["typing", "typing_extensions"]
