@@ -7,7 +7,7 @@ from argparse import (
 import docker
 
 from cloudwatch_logger.logger import CloudWatchLogger
-from cloudwatch_logger..mixins import ConsoleLoggingMixin
+from cloudwatch_logger.mixins import ConsoleLoggingMixin
 
 
 class BaseCommandRunner(ABC):

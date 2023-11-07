@@ -1,6 +1,6 @@
-from cloudwatch_logger.runner import DockerCommandRunner
+from mocks import patch_runner__parse_args__get_from_env
 
-from cloudwatch_logger.tests.mocks import patch_runner__parse_args__get_from_env
+from cloudwatch_logger.runner import DockerCommandRunner
 
 
 @patch_runner__parse_args__get_from_env
