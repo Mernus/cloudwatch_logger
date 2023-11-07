@@ -1,4 +1,3 @@
-import logging
 from abc import ABC, abstractmethod
 from argparse import (
     ArgumentDefaultsHelpFormatter,
@@ -7,7 +6,8 @@ from argparse import (
 
 import docker
 
-from logger import CloudWatchLogger
+from cloudwatch_logger.logger import CloudWatchLogger
+from cloudwatch_logger..mixins import ConsoleLoggingMixin
 
 
 class BaseCommandRunner(ABC):
@@ -18,7 +18,7 @@ class BaseCommandRunner(ABC):
         """Run command."""
         raise NotImplementedError
 
-class DockerCommandRunner(BaseCommandRunner):
+class DockerCommandRunner(BaseCommandRunner, ConsoleLoggingMixin):
     """Docker command runner.
     Run bash command inside docker and stream logs from it to AWS CloudWatch.
 
@@ -28,6 +28,7 @@ class DockerCommandRunner(BaseCommandRunner):
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self.parser = self._init_parser()
         self.docker = docker.from_env()
 
@@ -55,7 +56,7 @@ class DockerCommandRunner(BaseCommandRunner):
             "--bash-command",
             type=str,
             help="Bash command to run in container",
-            nargs=1,
+            nargs="?",
             required=True,
             metavar="COMMAND",
         )
@@ -63,16 +64,15 @@ class DockerCommandRunner(BaseCommandRunner):
             "--aws-cloudwatch-group",
             type=str,
             help="Name of an AWS CloudWatch group",
-            nargs=1,
+            nargs="?",
             required=True,
             metavar="CLOUDWATCH_GROUP",
-            # add validators
         )
         parser.add_argument(
             "--aws-cloudwatch-stream",
             type=str,
             help="Name of an AWS CloudWatch stream",
-            nargs=1,
+            nargs="?",
             required=True,
             metavar="CLOUDWATCH_STREAM",
         )
@@ -80,7 +80,7 @@ class DockerCommandRunner(BaseCommandRunner):
             "--aws-access-key-id",
             type=str,
             help="AWS Access Key",
-            nargs=1,
+            nargs="?",
             required=True,
             metavar="ACCESS_KEY",
         )
@@ -88,7 +88,7 @@ class DockerCommandRunner(BaseCommandRunner):
             "--aws-secret-access-key",
             type=str,
             help="AWS Secret Key",
-            nargs=1,
+            nargs="?",
             required=True,
             metavar="SECRET_KEY",
         )
@@ -96,7 +96,7 @@ class DockerCommandRunner(BaseCommandRunner):
             "--aws-region",
             type=str,
             help="AWS Region",
-            nargs=1,
+            nargs="?",
             required=True,
             metavar="REGION",
         )
@@ -109,42 +109,47 @@ class DockerCommandRunner(BaseCommandRunner):
         try:
             self.docker.images.get(args.docker_image)
         except docker.errors.ImageNotFound:
-            logging.error("No such docker image")
+            self.logger.error("No such docker image")
             exit()
         except docker.errors.APIError:
-            logging.error("Errors with docker server. Try again later.")
+            self.logger.error("Errors with docker server. Try again later.")
             exit()
 
-        logging.info("Docker image exist")
+        self.logger.info("Docker image exist")
         try:
-            logging.info("Running docker container")
+            self.logger.info("Running docker container...")
             container = self.docker.containers.run(
                 image=args.docker_image,
                 command=f"bash -c '{args.bash_command}'",
-                remove=True,
                 detach=True,
             )
-            logging.info("Container is up")
+            self.logger.info("Container is up")
 
-            logging.info("Running cloudwatch logger")
-            logger = CloudWatchLogger(
+            self.logger.info("Running cloudwatch logger...")
+            cloudwatch_logger = CloudWatchLogger(
                 cloudwatch_group=args.aws_cloudwatch_group,
                 cloudwatch_stream=args.aws_cloudwatch_stream,
                 access_key=args.aws_access_key_id,
                 secret_key=args.aws_secret_access_key,
                 region=args.aws_region,
             )
-            logging.info("Logger is up")
+            self.logger.info("Logger is up")
 
-            logging.info("Streaming docker logs")
+            self.logger.info("Streaming docker logs...")
             for line in container.logs(stream=True):
-                logger.log(line.decode("utf-8"))
+                cloudwatch_logger.log(line.decode("utf-8"))
+            self.logger.info("Streaming docker logs ended")
 
         except docker.errors.DockerException as exc:
-            logging.error(f"Errors with docker. Info: {exc}")
+            self.logger.error(f"Errors with docker. Info: \n\n{exc}")
 
         finally:
-            logging.info("Shutting down")
-            if container is not None:
+            self.logger.info("Shutting down docker container...")
+
+            try:
+                container.reload()
                 container.remove(force=True)
-        
+            except docker.errors.NotFound:
+                pass
+            except docker.errors.DockerException as exc:
+                self.logger.error(f"Errors on docker container removing. Info: \n\n{exc}")

@@ -1,4 +1,4 @@
-from runner import DockerCommandRunner
+from cloudwatch_logger.runner import DockerCommandRunner
 
 
 if __name__ == "__main__":

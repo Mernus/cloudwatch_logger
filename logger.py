@@ -1,11 +1,11 @@
-import logging
 from abc import ABC, abstractmethod
 from time import time
 from typing import Any
 
 import boto3
 
-import consts
+from cloudwatch_logger.consts import MAX_MSG_SIZE, MAX_RETRIES, NULL_SEQUENCE_TOKEN
+from cloudwatch_logger.mixins import ConsoleLoggingMixin
 
 
 class BaseLogger(ABC):
@@ -21,11 +21,10 @@ class BaseLogger(ABC):
         raise NotImplementedError
 
 
-class CloudWatchLogger(BaseLogger):
+class CloudWatchLogger(BaseLogger, ConsoleLoggingMixin):
     """AWS CloudWatch logger.
     
     Attributes:
-        logger (Logger): Console logger.
         __sequence_token (str): Log sequence token.
         cloudwatch_group (str): AWS CloudWatch group name.
         cloudwatch_stream (str): AWS CloudWatch stream name.
@@ -41,7 +40,7 @@ class CloudWatchLogger(BaseLogger):
         secret_key: str,
         region: str,
     ) -> None:
-        """Initialize logger.
+        """Initialize CloudWatch logger.
 
         Args:
             cloudwatch_group (str): AWS CloudWatch group name.
@@ -50,7 +49,7 @@ class CloudWatchLogger(BaseLogger):
             secret_key (str): AWS Secret key.
             region (str): AWS Region.
         """
-        self.logger = logging.getLogger(self.__class__.__name__)
+        super().__init__()
 
         self.__sequence_token: str | None = None
         self.cloudwatch_group = cloudwatch_group
@@ -78,9 +77,9 @@ class CloudWatchLogger(BaseLogger):
             self.logger.warning("We don't send empty messages to CloudWatch")
             return
 
-        if len(message) > consts.MAX_MSG_SIZE:
+        if len(message) > MAX_MSG_SIZE:
             self.logger.warning("Very long message. Truncating..")
-            message = message[:consts.MAX_MSG_SIZE]
+            message = message[:MAX_MSG_SIZE]
 
         log_entry = dict(
             timestamp=int(time() * 1000),
@@ -95,7 +94,8 @@ class CloudWatchLogger(BaseLogger):
         if self.__sequence_token is not None:
             log_event_data["sequenceToken"] = self.__sequence_token
 
-        for retry in range(consts.MAX_RETRIES):
+        self.logger.info("Delivering logs...")
+        for retry in range(MAX_RETRIES):
             try:
                 resp = self.__client.put_log_events(**log_event_data)
                 break
@@ -107,8 +107,7 @@ class CloudWatchLogger(BaseLogger):
                 # We get last word in message to verify what token is expecting on next request
                 next_sequence_token = exc.response["Error"]["Message"].rsplit(" ", 1)[-1]
 
-                
-                if next_sequence_token != "null":
+                if next_sequence_token != NULL_SEQUENCE_TOKEN:
                     log_event_data["sequenceToken"] = next_sequence_token
                 else:
                     # If null - no tokens expecting
@@ -119,11 +118,10 @@ class CloudWatchLogger(BaseLogger):
                 self._create_log_stream()
                 log_event_data.pop("sequenceToken", None)
             except Exception as exc:
-                self.logger.warning(f"Can`t deliver logs. Retry: #{retry + 1}. Error: {exc}")
-
+                self.logger.warning(f"Can`t deliver logs. Retry: #{retry + 1}. Error: \n\n{exc}")
         
         if resp is None or resp.get("rejectedLogEventsInfo", {}):
-            self.logger.warning(f"Can`t deliver logs. Invalid response: {resp}")
+            self.logger.warning(f"Can`t deliver logs. Invalid response: \n\n{resp}")
         elif "nextSequenceToken" in resp:
             self.__sequence_token = resp["nextSequenceToken"]
 
@@ -163,3 +161,6 @@ class CloudWatchLogger(BaseLogger):
             self.__client.exceptions.ResourceAlreadyExistsException,
         ):
             pass
+        except self.__client.exceptions.ClientError:
+            self.logger.error("Can`t make request to AWS CloudWatch. Invalid response.\n")
+            raise
